@@ -1,0 +1,30 @@
+{
+  "name": "csn-gestion-tareas",
+  "version": "1.0.0",
+  "description": "GESTIÓN DE TAREAS – CSN Gestión de Activos Inmobiliarios SPA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/todas.js",
+    "test:modelo": "node tests/model.test.js",
+    "test:negocio": "node tests/store.test.js",
+    "test:sync": "node tests/sync.test.js",
+    "test:informes": "node tests/export.test.js",
+    "test:interfaz": "node tests/ui.test.js",
+    "test:pwa": "node tests/pwa.test.js",
+    "verificar-navegador": "node verificar-navegador.js"
+  },
+  "keywords": [
+    "tareas",
+    "administración de edificios",
+    "comunidades",
+    "PWA",
+    "sincronización"
+  ],
+  "author": "CSN Gestión de Activos Inmobiliarios SPA",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "jsdom": "^30.1.1"
+  },
+  "private": true
+}

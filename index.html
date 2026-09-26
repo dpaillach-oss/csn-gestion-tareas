@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GESTIÓN DE TAREAS – CSN Gestión de Activos Inmobiliarios SPA</title>
+<meta name="description" content="Sistema profesional de gestión, control y seguimiento de tareas para administración de edificios y comunidades.">
+<meta name="theme-color" content="#003090">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CSN Tareas">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icons/favicon.png">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/print.css">
+</head>
+<body>
+
+<!-- Banner sin conexión -->
+<div id="offline-banner" class="banner-offline hidden">⚠️ SIN CONEXIÓN — los cambios se guardan en este dispositivo y se sincronizarán automáticamente al recuperar Internet.</div>
+
+<!-- ================= LOGIN ================= -->
+<div id="login-screen" class="login-wrap hidden">
+  <div class="login-card">
+    <div class="lg-logo"><img id="login-logo" src="assets/logo.png" alt="CSN Gestión de Activos Inmobiliarios"></div>
+    <div class="login-title" id="login-title">Gestión de Tareas</div>
+    <p class="center small muted" id="login-sub">CSN Gestión de Activos Inmobiliarios SPA</p>
+    <form id="login-form" autocomplete="on">
+      <div class="field">
+        <label for="login-email">Correo electrónico</label>
+        <input type="email" id="login-email" name="email" autocomplete="username" required placeholder="usuario@csn.cl">
+      </div>
+      <div class="field">
+        <label for="login-password">Contraseña</label>
+        <input type="password" id="login-password" name="password" autocomplete="current-password" required placeholder="••••••••">
+      </div>
+      <div id="login-error" class="alert-box alert-danger hidden mb"></div>
+      <button type="submit" class="btn btn-primary btn-block btn-lg" id="login-btn">INGRESAR</button>
+    </form>
+    <div class="mt card tight" style="background:var(--c-surface-2)">
+      <div class="small"><b>Acceso de demostración</b></div>
+      <div class="small muted">Administrador: <b>admin@csn.cl</b> / <b>csn2026</b></div>
+      <div class="small muted">Supervisor: <b>supervisor@csn.cl</b> / <b>supervisor2026</b></div>
+      <div class="small muted">Usuario: <b>usuario@csn.cl</b> / <b>usuario2026</b></div>
+      <button type="button" class="btn btn-sm mt" id="login-demo">Usar credenciales de administrador</button>
+    </div>
+    <p class="center small muted mt">Puede restablecer las credenciales de demostración desde <b>Configuración</b>.</p>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app-shell" class="app hidden">
+  <header class="topbar no-print">
+    <button class="burger" id="burger" aria-label="Abrir menú">☰</button>
+    <div class="brand">
+      <span class="l1" id="brand-l1">GESTIÓN DE TAREAS</span>
+      <span class="l2" id="brand-l2">CSN Gestión de Activos Inmobiliarios SPA</span>
+    </div>
+    <div class="flex items-center gap" style="margin-left:auto">
+      <button class="sync-pill s-off" id="sync-pill" title="Estado de sincronización">
+        <span class="dot"></span><span id="sync-text">SIN CONEXIÓN</span>
+      </button>
+      <div class="user-chip">
+        <span id="user-avatar">👤</span><b id="user-name">—</b>
+      </div>
+      <div class="logo-box" title="CSN Gestión de Activos Inmobiliarios SPA">
+        <img id="header-logo" src="assets/logo-header.png" alt="Logotipo CSN">
+      </div>
+    </div>
+  </header>
+
+  <div class="body-wrap">
+    <aside class="sidebar no-print" id="sidebar">
+      <div class="side-head">
+        <img id="side-logo" src="assets/icons/icon-192.png" alt="CSN" style="height:34px">
+        <b>Menú</b>
+        <button class="btn btn-ghost btn-sm" id="side-close" style="margin-left:auto">✕</button>
+      </div>
+      <nav id="nav"></nav>
+      <div class="nav-sep">Sesión</div>
+      <button class="nav-item" id="nav-logout"><span class="ico">🚪</span> Cerrar sesión</button>
+      <div class="small muted" style="padding:.5rem .7rem" id="side-version">v1.0</div>
+    </aside>
+
+    <main class="main">
+      <div id="view-root" class="app-views"></div>
+    </main>
+  </div>
+
+  <nav class="bottom-nav no-print" id="bottom-nav"></nav>
+</div>
+
+<!-- Contenedor de modales -->
+<div id="modal-root"></div>
+<!-- Notificaciones -->
+<div class="toasts" id="toasts"></div>
+<!-- Raíz de informes (sólo impresión) -->
+<div id="report-root" class="report-only"></div>
+
+<script src="js/util.js"></script>
+<script src="js/db.js"></script>
+<script src="js/crypto.js"></script>
+<script src="js/zip.js"></script>
+<script src="js/xlsx.js"></script>
+<script src="js/model.js"></script>
+<script src="js/store.js"></script>
+<script src="js/sync/core.js"></script>
+<script src="js/sync/gist.js"></script>
+<script src="js/sync/supabase.js"></script>
+<script src="js/sync/archivos.js"></script>
+<script src="js/sync/index.js"></script>
+<script src="js/report.js"></script>
+<script src="js/views/ui.js"></script>
+<script src="js/views/dashboard.js"></script>
+<script src="js/views/comunidades.js"></script>
+<script src="js/views/tareas.js"></script>
+<script src="js/views/calendario.js"></script>
+<script src="js/views/informes.js"></script>
+<script src="js/views/buscar.js"></script>
+<script src="js/views/usuarios.js"></script>
+<script src="js/views/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

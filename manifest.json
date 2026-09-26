@@ -1,0 +1,27 @@
+{
+  "name": "GESTIÓN DE TAREAS – CSN Gestión de Activos Inmobiliarios SPA",
+  "short_name": "CSN Tareas",
+  "description": "Sistema profesional de gestión, control y seguimiento de tareas para la administración de edificios y comunidades. Funciona en computador, tablet y teléfono, con sincronización entre dispositivos.",
+  "lang": "es-CL",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#003090",
+  "categories": ["business", "productivity", "utilities"],
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "assets/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Nueva tarea", "short_name": "Nueva tarea", "url": "./index.html#/tareas", "description": "Registrar una nueva tarea" },
+    { "name": "Tareas vencidas", "short_name": "Vencidas", "url": "./index.html#/vencidas", "description": "Ver tareas vencidas" },
+    { "name": "Calendario", "short_name": "Calendario", "url": "./index.html#/calendario", "description": "Ver el calendario de tareas" },
+    { "name": "Informes", "short_name": "Informes", "url": "./index.html#/informes", "description": "Generar informes en PDF y Excel" }
+  ]
+}

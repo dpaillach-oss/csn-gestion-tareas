@@ -1,0 +1,10 @@
+# Dependencias y cachés de desarrollo (no se publican)
+node_modules/
+.npm-cache/
+package-lock.json
+
+# Archivos generados y temporales
+revision-impresion/
+.chrome-perfil/
+*.log
+.DS_Store
