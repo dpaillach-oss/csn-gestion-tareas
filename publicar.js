@@ -101,6 +101,11 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
     ok(true, 'Se inicializa el repositorio local');
   } else ok(true, 'El repositorio local ya existe');
   try { sh('git config user.name', { stdio: 'ignore' }); } catch (e) { sh('git config user.name "' + usuario + '"'); }
+  // Entornos restringidos: la sesión de GitHub puede vivir en una carpeta de
+  // configuración propia (GH_CONFIG_DIR) y no estar registrada en Git. Se deja
+  // el repositorio configurado para usar las credenciales de `gh` al enviar.
+  try { sh('git config --local --get credential.helper', { stdio: 'ignore' }); }
+  catch (e) { try { sh('git config --local credential.helper "!gh auth git-credential"'); ok(true, 'Se configura el envío con las credenciales de GitHub CLI'); } catch (e2) {} }
   try { sh('git config user.email', { stdio: 'ignore' }); } catch (e) { sh('git config user.email "' + usuario + '@users.noreply.github.com"'); }
   sh('git add -A');
   try {
