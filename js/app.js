@@ -23,7 +23,7 @@
   var NAV_MOVIL = ['dashboard', 'tareas', 'calendario', 'buscar', 'vencidas'];
 
   var App = CSN.app = {
-    VERSION: '1.0.0',
+    VERSION: '1.0.1',
     ruta: 'dashboard',
     params: {},
     listo: false,
