@@ -178,10 +178,16 @@
   };
 
   /* ---------- Filtros ---------- */
+  /**
+   * Opciones de un desplegable. Acepta textos simples o registros con
+   * identificador (por ejemplo los estados y prioridades, que además llevan
+   * una clase de color). La etiqueta visible es el nombre del registro o, si
+   * no lo tiene, su identificador.
+   */
   UI.opciones = function (lista, valor, placeholder) {
-    return '<option value="">' + U.escapeHtml(placeholder || 'Todos') + '</option>' + lista.map(function (o) {
-      var v = o.id !== undefined ? o.id : o;
-      var t = o.nombre !== undefined ? o.nombre : (o.t || o);
+    return '<option value="">' + U.escapeHtml(placeholder || 'Todos') + '</option>' + (lista || []).map(function (o) {
+      var v = (o && o.id !== undefined) ? o.id : o;
+      var t = (o && o.nombre !== undefined) ? o.nombre : ((o && o.t !== undefined) ? o.t : v);
       return '<option value="' + U.attr(v) + '"' + (String(v) === String(valor) ? ' selected' : '') + '>' + U.escapeHtml(t) + '</option>';
     }).join('');
   };
@@ -207,8 +213,10 @@
   UI.selectPrioridades = function (valor, placeholder) { return '<select data-campo="prioridad">' + UI.opciones(M.PRIORIDADES, valor, placeholder) + '</select>'; };
 
   UI.chips = function (items, activo, campo) {
-    return '<div class="chip-row">' + items.map(function (i) {
-      return '<button type="button" class="chip' + (String(i.id) === String(activo) ? ' active' : '') + '" data-chip="' + U.attr(campo) + '" data-valor="' + U.attr(i.id) + '">' + U.escapeHtml(i.t) + '</button>';
+    return '<div class="chip-row">' + (items || []).map(function (i) {
+      var v = (i && i.id !== undefined) ? i.id : i;
+      var t = (i && i.t !== undefined) ? i.t : ((i && i.nombre !== undefined) ? i.nombre : v);
+      return '<button type="button" class="chip' + (String(v) === String(activo) ? ' active' : '') + '" data-chip="' + U.attr(campo) + '" data-valor="' + U.attr(v) + '">' + U.escapeHtml(t) + '</button>';
     }).join('') + '</div>';
   };
 

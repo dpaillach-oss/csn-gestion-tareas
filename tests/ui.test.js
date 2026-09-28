@@ -336,6 +336,16 @@ const clic = (el) => { if (!el) throw new Error('Elemento no encontrado para hac
   const camposTarea = $$('#form-tarea [data-campo]').map((e) => e.getAttribute('data-campo'));
   ['comunidadId', 'titulo', 'descripcion', 'fechaCreacion', 'fechaLimite', 'prioridad', 'estado', 'responsable', 'avance', 'fechaCumplimiento', 'comentarioFinal']
     .forEach((c) => H.ok(camposTarea.indexOf(c) >= 0, 'El formulario de tarea incluye el campo «' + c + '»'));
+
+  // Los desplegables deben mostrar los NOMBRES, no etiquetas inválidas
+  const textosDe = (sel) => Array.from(sel.querySelectorAll('option')).map((o) => o.textContent.trim());
+  H.igual(textosDe($('#form-tarea select[data-campo="prioridad"]')).slice(1),
+    ['Baja', 'Media', 'Alta', 'Urgente'], 'El formulario muestra las cuatro prioridades por su nombre');
+  H.igual(textosDe($('#form-tarea select[data-campo="estado"]')).slice(1),
+    ['Pendiente', 'En proceso', 'Pendiente de terceros', 'Completada', 'Cancelada', 'Vencida'],
+    'El formulario muestra todos los estados por su nombre');
+  H.falso(/\[object (Object|Array)\]/.test($('#modal-root').innerHTML),
+    'El formulario no muestra etiquetas inválidas en ningún campo');
   $('#form-tarea [data-campo="titulo"]').value = 'Tarea creada desde la interfaz de prueba';
   $('#form-tarea [data-campo="descripcion"]').value = 'Registrada por la prueba automatizada';
   $('#form-tarea [data-campo="fechaLimite"]').value = CSN.util.sumarDias(CSN.util.hoy(), 5);
@@ -365,8 +375,28 @@ const clic = (el) => { if (!el) throw new Error('Elemento no encontrado para hac
   CSN.util.Modal.cerrar();
   await H.esperar(() => !$('#modal-root .overlay'), 3000);
 
-  /* ---------- 14. Cierre de sesión ---------- */
-  H.grupo('14. Cierre de sesión');
+  /* ---------- 14. Revisión de todas las pantallas ---------- */
+  H.grupo('14. Revisión de todas las pantallas (etiquetas y contenido)');
+  CSN.app.ir('tareas', {}, true);
+  await H.esperar(() => !!$('#view-root [data-campo="prioridad"]'), 3000);
+  H.igual(textosDe($('#view-root select[data-campo="prioridad"]')).slice(1),
+    ['Baja', 'Media', 'Alta', 'Urgente'], 'El filtro de prioridad muestra los nombres correctos');
+  H.igual(textosDe($('#view-root select[data-campo="estado"]')).slice(1),
+    ['Pendiente', 'En proceso', 'Pendiente de terceros', 'Completada', 'Cancelada', 'Vencida'],
+    'El filtro de estado muestra los nombres correctos');
+
+  const RUTAS = [['dashboard', {}], ['comunidades', {}], ['tareas', {}], ['calendario', {}],
+    ['pendientes', {}], ['vencidas', {}], ['informes', {}], ['buscar', {}], ['configuracion', {}], ['usuarios', {}]];
+  for (const [ruta, prm] of RUTAS) {
+    CSN.app.ir(ruta, prm, true);
+    await new Promise((r) => setTimeout(r, 80));
+    const html = $('#view-root').innerHTML;
+    H.falso(/\[object (Object|Array)\]/.test(html), 'La pantalla «' + ruta + '» no muestra etiquetas inválidas');
+    H.ok(html.length > 400, 'La pantalla «' + ruta + '» tiene contenido');
+  }
+
+  /* ---------- 15. Cierre de sesión ---------- */
+  H.grupo('15. Cierre de sesión');
   clic($('#nav-logout'));
   await H.esperar(() => !!$('#modal-root .overlay'), 2000);
   clic($$('#modal-root .modal-f .btn').filter((b) => /Cerrar sesión/.test(b.textContent))[0]);
