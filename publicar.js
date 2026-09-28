@@ -32,7 +32,10 @@ function ok(cond, desc, extra) {
   return cond;
 }
 function sh(cmd, opts) {
-  return execSync(cmd, Object.assign({ cwd: RAIZ, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }, opts || {})).trim();
+  const salida = execSync(cmd, Object.assign({ cwd: RAIZ, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }, opts || {}));
+  // Con la salida silenciada (stdio: 'ignore') el resultado es nulo: se normaliza
+  // para no romper el flujo al encadenar comprobaciones.
+  return (salida === null || salida === undefined) ? '' : String(salida).trim();
 }
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -123,7 +126,7 @@ const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
   let existe = false;
   try { sh('gh repo view ' + NOMBRE + ' --json name'); existe = true; } catch (e) { existe = false; }
   if (existe) {
-    sh('git remote remove origin', { stdio: 'ignore' });
+    try { sh('git remote remove origin', { stdio: 'ignore' }); } catch (e) {}
     sh('git remote add origin https://github.com/' + usuario + '/' + NOMBRE + '.git');
     sh('git push -u origin main 2>&1');
     ok(true, 'Se actualiza el repositorio existente ' + NOMBRE);
