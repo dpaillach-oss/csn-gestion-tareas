@@ -3,7 +3,7 @@
    Permite instalar la aplicación, abrirla como aplicación de escritorio o de
    teléfono y trabajar sin conexión con los datos ya descargados.
    ========================================================================== */
-var VERSION = 'csn-tareas-v1.0.1';
+var VERSION = 'csn-tareas-v1.0.2';
 var ESTATICOS = [
   './',
   'index.html',
