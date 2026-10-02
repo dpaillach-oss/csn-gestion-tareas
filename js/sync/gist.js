@@ -29,8 +29,9 @@
     };
   }
 
-  function pedir(metodo, url, cuerpo) {
+  function pedir(metodo, url, cuerpo, signal) {
     var opts = { method: metodo, headers: cabeceras(), cache: 'no-store' };
+    if (signal) opts.signal = signal;
     if (cuerpo) opts.body = JSON.stringify(cuerpo);
     return fetch(url, opts).then(function (r) {
       if (r.status === 401) throw new Error('Token de GitHub inválido o vencido (401). Genere uno nuevo con permiso "gist".');
@@ -42,14 +43,14 @@
     });
   }
 
-  function crearRepositorio() {
+  function crearRepositorio(signal) {
     var cuerpo = {
       description: 'CSN Gestión de Tareas — base de datos cifrada (sincronización entre dispositivos)',
       public: false,
       files: {}
     };
     cuerpo.files[ARCHIVO_META] = { content: JSON.stringify({ formato: 'csn-gestion-tareas', estado: 'nuevo', creado: U.marca() }, null, 2) };
-    return fetch(API + '/gists', { method: 'POST', headers: cabeceras(), body: JSON.stringify(cuerpo) })
+    return fetch(API + '/gists', { method: 'POST', headers: cabeceras(), body: JSON.stringify(cuerpo), signal: signal })
       .then(function (r) {
         if (r.status === 401) throw new Error('Token de GitHub inválido (401). Genere uno nuevo con permiso "gist".');
         if (!r.ok) throw new Error('No fue posible crear la base de datos en la nube (' + r.status + ')');
@@ -66,8 +67,8 @@
     snapshot: true,
 
     /** Crea una base de datos nueva y guarda su identificador en la configuración */
-    crear: function () {
-      return crearRepositorio().then(function (g) {
+    crear: function (signal) {
+      return crearRepositorio(signal).then(function (g) {
         return CSN.store.guardarConfig({ gistId: g.id }).then(function () {
           return { id: g.id, url: g.html_url };
         });
@@ -75,9 +76,9 @@
     },
 
     /** Verifica token y repositorio */
-    probar: function () {
+    probar: function (signal) {
       var c = conf();
-      return fetch(API + '/user', { headers: cabeceras() })
+      return fetch(API + '/user', { headers: cabeceras(), signal: signal })
         .then(function (r) {
           if (r.status === 401) throw new Error('Token de GitHub inválido o vencido (401).');
           if (!r.ok) throw new Error('No fue posible validar el token (' + r.status + ')');
@@ -94,7 +95,7 @@
     },
 
     /** Descarga el paquete remoto (devuelve null si aún no hay datos) */
-    descargar: function () {
+    descargar: function (signal) {
       var c = conf();
       if (!c.gistId) return Promise.resolve(null);
       return pedir('GET', API + '/gists/' + c.gistId).then(function (g) {
@@ -104,6 +105,10 @@
           try { meta = JSON.parse(archivos[ARCHIVO_META].content); } catch (e) { meta = null; }
         }
         if (!meta || meta.estado === 'nuevo') return null;
+
+        // Repositorio recién creado o sin datos: no hay nada que descargar
+        // (evita intentar descifrar un contenido inexistente).
+        if (!meta.partes) return null;
 
         // Verificación de clave: se comprueba la huella antes de descargar los datos.
         var verificacion = (meta.huella && c.syncClave)
@@ -125,7 +130,7 @@
         return verificacion.then(function () {
           return Promise.all(partes.map(function (a) {
             if (a.content && !a.truncated) return Promise.resolve(a.content);
-            return fetch(a.raw_url, { headers: cabeceras(), cache: 'no-store' }).then(function (r) {
+            return fetch(a.raw_url, { headers: cabeceras(), cache: 'no-store', signal: signal }).then(function (r) {
               if (!r.ok) throw new Error('No fue posible descargar un bloque de datos (' + r.status + ')');
               return r.text();
             });
@@ -139,7 +144,7 @@
     },
 
     /** Sube el paquete (sólo los registros modificados) */
-    subir: function (paquete) {
+    subir: function (paquete, signal) {
       var c = conf();
       var texto = JSON.stringify(paquete);
       if (texto.length > AVISO_PESO) {
@@ -158,7 +163,7 @@
 
           var asegurar = c.gistId
             ? Promise.resolve(c.gistId)
-            : crearRepositorio().then(function (g) { return CSN.store.guardarConfig({ gistId: g.id }).then(function () { return g.id; }); });
+            : crearRepositorio(signal).then(function (g) { return CSN.store.guardarConfig({ gistId: g.id }).then(function () { return g.id; }); });
 
           return asegurar.then(function (id) {
             return pedir('GET', API + '/gists/' + id).then(function (g) {

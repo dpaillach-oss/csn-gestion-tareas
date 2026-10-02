@@ -88,7 +88,7 @@ const archivosCache = listaCache[1].split(',').map((s) => s.trim().replace(/^'|'
 H.ok(archivosCache.length >= 25, 'Almacena ' + archivosCache.length + ' archivos para uso sin conexión');
 archivosCache.forEach((rel) => H.ok(existe(rel), 'Archivo almacenado para uso sin conexión: ' + rel));
 scripts.forEach((s) => H.ok(archivosCache.indexOf(s) >= 0, 'El módulo ' + s + ' está incluido en el almacenamiento sin conexión'));
-H.ok(/github\\.com\|supabase/.test(sw), 'No se almacenan en caché las llamadas a los servicios en la nube (datos siempre actualizados)');
+H.ok(/url\.origin !== location\.origin/.test(sw), 'Las llamadas a los servicios en la nube no se interceptan: sólo se gestionan archivos del propio sitio');
 
 H.grupo('6. Estilos de impresión de informes');
 const print = leer('css/print.css');
@@ -175,4 +175,92 @@ H.contiene(leer('js/report.js'), 'EXPORTAR EXCEL', 'La exportación a Excel est�
 H.contiene(fs.readFileSync(path.join(RAIZ, 'js/views/config.js'), 'utf8'), 'preparada para incorporar nuevos módulos',
   'La configuración documenta la escalabilidad del sistema');
 
-H.resumen('pwa.test.js');
+/* --- Las comprobaciones del service worker son asíncronas --- */
+(async () => {
+  /* ---------- 10. Service worker: comportamiento ante fallos de red ---------- */
+  H.grupo('10. Service worker (no debe ocultar ni interferir con la sincronización)');
+  {
+    const vm = require('vm');
+    const sw = leer('sw.js');
+
+    // Las peticiones al servicio en la nube NO deben pasar por el service worker
+    H.noContiene(sw, 'caches.match(e.request); })', 'Ya no se devuelven respuestas vacías que provoquen «NetworkError»');
+    H.contiene(sw, 'respuestaSinConexion', 'Existe una respuesta clara cuando no hay conexión ni copia guardada');
+    H.contiene(sw, "if (url.origin !== location.origin) return;", 'Sólo se gestionan archivos del propio sitio');
+
+    function entornoSW(opciones) {
+      opciones = opciones || {};
+      const manejadores = {};
+      const respondidos = [];
+      const contexto = {
+        console,
+        URL,
+        Promise,
+        setTimeout,
+        clearTimeout,
+        Response: class Respuesta {
+          constructor(cuerpo, opts) { this.body = cuerpo; this.status = (opts && opts.status) || 200; this.type = 'basic'; }
+        },
+        location: { origin: 'https://dpaillach-oss.github.io' },
+        caches: {
+          match: () => Promise.resolve(opciones.enCache || null),
+          open: () => Promise.resolve({ put: () => Promise.resolve(), addAll: () => Promise.resolve() }),
+          keys: () => Promise.resolve([]),
+          delete: () => Promise.resolve(true)
+        },
+        fetch: () => opciones.redFalla
+          ? Promise.reject(Object.assign(new Error('NetworkError when attempting to fetch resource.'), { name: 'TypeError' }))
+          : Promise.resolve({ status: 200, type: 'basic', clone() { return this; } }),
+        self: {
+          addEventListener: (tipo, fn) => { manejadores[tipo] = fn; },
+          clients: { claim: () => Promise.resolve() },
+          skipWaiting: () => {}
+        }
+      };
+      vm.createContext(contexto);
+      vm.runInContext(sw, contexto);
+      return {
+        disparar: (url, method) => {
+          manejadores.fetch({
+            request: { url, method: method || 'GET' },
+            respondWith: (p) => { respondidos.push(p); }
+          });
+          return respondidos;
+        }
+      };
+    }
+
+    // 1) Petición al servicio en la nube: no se intercepta (así llegan los errores reales)
+    const sw1 = entornoSW({});
+    H.igual(sw1.disparar('https://api.github.com/gists/123', 'GET').length, 0,
+      'Las llamadas a la sincronización pasan directo a la red, sin intervención del service worker');
+    H.igual(sw1.disparar('https://mlvldb.supabase.co/rest/v1/csn_registros', 'PATCH').length, 0,
+      'Los envíos a la base de datos en la nube no se interceptan');
+
+    // 2) Archivo propio con copia guardada: se responde desde la caché (funciona sin conexión)
+    const copia = { status: 200, type: 'basic', guardada: true };
+    const sw2 = entornoSW({ enCache: copia });
+    const r2 = sw2.disparar('https://dpaillach-oss.github.io/csn-gestion-tareas/js/app.js');
+    H.igual(r2.length, 1, 'Los archivos propios sí se sirven desde la caché');
+    H.igual(await r2[0], copia, 'Se entrega la copia guardada sin esperar la red');
+
+    // 3) Archivo propio sin copia y sin red: respuesta válida y comprensible (no un error vacío)
+    const sw3 = entornoSW({ redFalla: true });
+    const r3 = sw3.disparar('https://dpaillach-oss.github.io/csn-gestion-tareas/js/nuevo.js');
+    const resp3 = await r3[0];
+    H.ok(!!resp3, 'Se responde algo válido aunque no haya red ni copia guardada');
+    H.igual(resp3.status, 503, 'La respuesta indica que no hay conexión');
+    H.contiene(String(resp3.body), 'Sin conexión', 'La respuesta explica el problema en español');
+
+    // 4) Archivo propio sin copia pero con red: se entrega desde la red
+    const sw4 = entornoSW({});
+    const r4 = sw4.disparar('https://dpaillach-oss.github.io/csn-gestion-tareas/css/styles.css');
+    const resp4 = await r4[0];
+    H.igual(resp4.status, 200, 'Con conexión se entrega el archivo desde la red');
+  }
+
+  H.resumen('pwa.test.js');
+})().catch((e) => {
+  console.error('\n✗ ERROR EN LA SUITE:', e);
+  process.exit(1);
+});

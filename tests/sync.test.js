@@ -409,6 +409,88 @@ const esperarMs = (ms) => new Promise((r) => setTimeout(r, ms));
   try { await V0.CSN.sync.generarCodigoVinculacion(); } catch (x) { e4 = x; }
   H.ok(e4 && /Primero complete/i.test(e4.message), 'Sin sincronización configurada se explica qué falta antes de generar el código');
 
+  /* ================= 11. Fallos de conexión: mensajes claros y reintentos ================= */
+  H.grupo('11. Fallos de conexión (Internet, red bloqueada y servicio sin respuesta)');
+    const errorDeRed = (msg) => { const e = new Error(msg || 'NetworkError when attempting to fetch resource.'); e.name = 'TypeError'; return e; };
+  {
+    // Dispositivo con una red que falla: el navegador produce un TypeError genérico
+    const falla = () => Promise.reject(errorDeRed());
+    const F = H.crearEntorno({ sinApp: true, fetch: falla });
+    await F.CSN.store.iniciar();
+    await F.CSN.store.login('admin@csn.cl', 'csn2026');
+    F.CSN.sync.tiempoLimite = 60;              // tiempos reducidos para la prueba
+    F.CSN.sync.esperasReintento = [0, 5, 10];
+    await F.CSN.store.guardarConfig({ syncModo: 'gist', gistToken: 'tk', syncClave: 'clave-de-prueba-2026', gistId: 'G1', syncAuto: false });
+
+    const rFallo = await F.CSN.sync.sincronizar({ manual: true });
+    H.falso(rFallo.ok, 'Si la red falla, la sincronización informa el problema');
+    H.falso(/NetworkError|Failed to fetch|TypeError/i.test(rFallo.mensaje),
+      'El mensaje NO muestra el error técnico del navegador en inglés');
+    H.contiene(rFallo.mensaje, 'No se pudo contactar el servicio', 'Explica que no se pudo contactar el servicio');
+    H.contiene(rFallo.mensaje, 'guardada', 'Indica que la información está guardada en el equipo');
+    H.ok(rFallo.red === true, 'El fallo se clasifica como problema de conexión');
+    H.igual(F.CSN.sync.estado, 'error', 'El indicador refleja el estado de error');
+
+    // Los cambios pendientes no se pierden: siguen en cola para el próximo intento
+    const pend = F.CSN.store.pendientes().pendientes;
+    H.ok(pend >= 1, 'Los cambios pendientes se conservan para enviarlos después');
+
+    // Sin Internet (el propio dispositivo está desconectado)
+    Object.defineProperty(F.w.navigator, 'onLine', { value: false, configurable: true });
+    const rOff = await F.CSN.sync.sincronizar({ manual: true });
+    H.falso(rOff.ok, 'Sin conexión no se sincroniza');
+    H.contiene(rOff.mensaje, 'sin conexión a Internet', 'El mensaje distingue la falta de Internet del resto de fallos');
+    H.igual(F.CSN.sync.estado, 'sin-conexion', 'El indicador muestra «SIN CONEXIÓN»');
+    Object.defineProperty(F.w.navigator, 'onLine', { value: true, configurable: true });
+  }
+
+  {
+    // Red inestable: falla dos veces y luego funciona -> debe reintentar solo y sincronizar
+    const api2 = apiGist();
+    // El repositorio se crea con la red funcionando (como ocurre en la realidad);
+    // la inestabilidad se simula después.
+    const gistCreado = await api2.fetch('https://api.github.com/gists',
+      { method: 'POST', body: JSON.stringify({ description: 'prueba', files: { 'csn-meta.json': { content: JSON.stringify({ formato: 'csn-gestion-tareas', estado: 'nuevo' }) } } }) })
+      .then((r) => r.json());
+    let intentosRed = 0;
+    const fetchInestable = (url, opts) => {
+      intentosRed += 1;
+      if (intentosRed <= 2) return Promise.reject(errorDeRed());
+      return api2.fetch(url, opts);
+    };
+    const G = H.crearEntorno({ sinApp: true, fetch: fetchInestable });
+    await G.CSN.store.iniciar();
+    await G.CSN.store.login('admin@csn.cl', 'csn2026');
+    G.CSN.sync.tiempoLimite = 300;
+    G.CSN.sync.esperasReintento = [0, 20, 40];
+    await G.CSN.store.guardarConfig({ syncModo: 'gist', gistToken: 'tk', syncClave: 'clave-de-prueba-2026', gistId: gistCreado.id, syncAuto: false });
+    await G.CSN.store.guardarComunidad({ nombre: 'COMUNIDAD DE PRUEBA', comuna: 'Santiago' });
+
+    const rInestable = await G.CSN.sync.sincronizar({ manual: true });
+    H.ok(rInestable.ok, 'Tras fallar la red, la aplicación reintenta y logra sincronizar sin intervención');
+    H.ok(intentosRed >= 3, 'Se realizaron varios intentos de conexión (' + intentosRed + ')');
+    H.ok(G.CSN.store.pendientes().pendientes === 0, 'Al lograrlo, los cambios quedan enviados');
+  }
+
+  {
+    // Servicio que no responde: debe cortarse por tiempo límite con un mensaje claro
+    const colgado = (url, opts) => new Promise((res, rej) => {
+      if (opts && opts.signal) opts.signal.addEventListener('abort', () => {
+        const e = new Error('aborted'); e.name = 'AbortError'; rej(e);
+      });
+    });
+    const T = H.crearEntorno({ sinApp: true, fetch: colgado });
+    await T.CSN.store.iniciar();
+    await T.CSN.store.login('admin@csn.cl', 'csn2026');
+    T.CSN.sync.tiempoLimite = 80;
+    T.CSN.sync.esperasReintento = [0, 5];
+    await T.CSN.store.guardarConfig({ syncModo: 'gist', gistToken: 'tk', syncClave: 'clave-de-prueba-2026', gistId: 'G1', syncAuto: false });
+    const rColgado = await T.CSN.sync.sincronizar({ manual: true });
+    H.falso(rColgado.ok, 'Si el servicio no responde, la sincronización no queda a medias');
+    H.contiene(rColgado.mensaje, 'no respondió a tiempo', 'Informa el tiempo de espera agotado');
+    H.falso(/AbortError|aborted/i.test(rColgado.mensaje), 'No muestra el error técnico de cancelación');
+  }
+
   H.resumen('sync.test.js');
 })().catch((e) => {
   console.error('\n✗ ERROR EN LA SUITE:', e);

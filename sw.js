@@ -61,28 +61,49 @@ self.addEventListener('activate', function (e) {
   );
 });
 
-self.addEventListener('fetch', function (e) {
-  var url = new URL(e.request.url);
-  if (e.request.method !== 'GET') return;
-  // Nunca se almacenan en caché las llamadas a los servicios en la nube
-  if (/github\.com|supabase\.co/.test(url.hostname)) return;
+/* Devuelve una respuesta válida cuando no hay conexión ni copia guardada.
+   Es importante responder SIEMPRE algo válido: si el manejador devuelve una
+   respuesta vacía, el navegador informa un error de red genérico y oculta la
+   causa real del problema. */
+function respuestaSinConexion() {
+  return new Response(
+    '<!DOCTYPE html><html lang="es"><meta charset="utf-8">' +
+    '<title>Sin conexión</title>' +
+    '<body style="font-family:system-ui,-apple-system,sans-serif;padding:2rem;color:#1c2333">' +
+    '<h1 style="color:#003090">Sin conexión</h1>' +
+    '<p>Este archivo todavía no está guardado en el dispositivo y ahora no hay Internet.</p>' +
+    '<p>Los datos que ya descargaste siguen disponibles; vuelve a intentarlo cuando recuperes la conexión.</p>' +
+    '<p><button onclick="location.reload()" style="padding:.6rem 1.2rem;border:0;border-radius:8px;' +
+    'background:#003090;color:#fff;font-size:1rem">Reintentar</button></p></body></html>',
+    { status: 503, statusText: 'Sin conexión', headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+  );
+}
 
-  if (url.origin === location.origin) {
-    // Archivos propios: primero la caché (rápido y funciona sin conexión)
-    e.respondWith(
-      caches.match(e.request).then(function (r) {
-        var red = fetch(e.request).then(function (resp) {
-          if (resp && resp.status === 200) {
-            var copia = resp.clone();
-            caches.open(VERSION).then(function (c) { c.put(e.request, copia); });
-          }
-          return resp;
-        }).catch(function () { return r; });
-        return r || red;
-      })
-    );
-    return;
-  }
-  // Otros orígenes: red con respaldo en caché
-  e.respondWith(fetch(e.request).catch(function () { return caches.match(e.request); }));
+self.addEventListener('fetch', function (e) {
+  var url;
+  try { url = new URL(e.request.url); } catch (err) { return; }
+
+  // Sólo se gestionan pedidos GET del propio sitio (los archivos de la aplicación).
+  // Cualquier otra petición —envíos a los servicios en la nube (GitHub, Supabase),
+  // métodos POST/PATCH y otros dominios— pasa directamente a la red, sin
+  // intervención, para no alterar la respuesta ni ocultar los errores reales.
+  if (e.request.method !== 'GET') return;
+  if (url.origin !== location.origin) return;
+
+  e.respondWith(
+    caches.match(e.request).then(function (enCache) {
+      // Primero la copia guardada (rápido y funciona sin conexión); en paralelo
+      // se actualiza desde la red cuando hay Internet.
+      var desdeRed = fetch(e.request).then(function (resp) {
+        if (resp && resp.status === 200 && resp.type === 'basic') {
+          var copia = resp.clone();
+          caches.open(VERSION).then(function (c) { c.put(e.request, copia); });
+        }
+        return resp;
+      }).catch(function () {
+        return enCache || respuestaSinConexion();
+      });
+      return enCache || desdeRed;
+    })
+  );
 });

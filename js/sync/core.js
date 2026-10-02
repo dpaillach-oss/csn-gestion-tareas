@@ -228,6 +228,101 @@
     });
   };
 
+  /* ---------- Diagnóstico de fallos de conexión ---------- */
+  // Mensajes que el navegador produce cuando la petición no llega a destino
+  var RE_FALLO_RED = /NetworkError|Failed to fetch|Load failed|Network request failed|net::ERR|ERR_[A-Z_]+|fetch failed|NetworkError when attempting/i;
+
+  /** ¿El fallo ocurrió antes de llegar al servicio (Internet, red o bloqueo)? */
+  function esFalloDeRed(e) {
+    if (!e) return false;
+    if (e.name === 'AbortError' || e.timeout) return true;
+    if (e.red === true) return true;
+    // Un fallo de fetch es siempre un TypeError (se comprueba también por nombre
+    // para que funcione entre contextos distintos: ventana, worker o pruebas)
+    if (e.name === 'TypeError') return true;
+    if (typeof TypeError !== 'undefined' && e instanceof TypeError) return true;
+    return RE_FALLO_RED.test(String(e.message || ''));
+  }
+
+  /**
+   * Traduce cualquier fallo técnico a un mensaje claro y accionable.
+   * El usuario nunca debe ver «NetworkError when attempting to fetch resource».
+   */
+  Sync.mensajeDeError = function (e) {
+    var bruto = (e && e.message) ? String(e.message) : '';
+    if (e && (e.name === 'AbortError' || e.timeout)) {
+      return 'El servicio de sincronización no respondió a tiempo. La información quedó guardada en este equipo y se reintentará automáticamente.';
+    }
+    if (!hayRed()) {
+      return 'Este dispositivo está sin conexión a Internet. La información quedó guardada y se enviará automáticamente cuando vuelva la conexión.';
+    }
+    if (esFalloDeRed(e)) {
+      return 'No se pudo contactar el servicio de sincronización desde este equipo. Suele deberse a falta de Internet, a una red que bloquea la conexión (por ejemplo, la red de una oficina o un filtro de contenido) o a un bloqueador de contenido del navegador. La información está guardada y se enviará automáticamente; use «Probar conexión» para ver el detalle.';
+    }
+    return bruto || 'No fue posible sincronizar.';
+  };
+
+  // Tiempos de espera y de reintento (ajustables; las pruebas los reducen)
+  Sync.tiempoLimite = 25000;            // ms para considerar que el servicio no responde
+  Sync.esperasReintento = [0, 2500, 6000];   // esperas entre intentos ante fallos de conexión
+
+  /** Ejecuta una operación de red con tiempo límite y clasifica el fallo */
+  function conRed(accion, ms) {
+    var limite = ms || Sync.tiempoLimite;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var reloj;
+    // El tiempo límite se aplica SIEMPRE. Si el navegador soporta la cancelación
+    // de peticiones, además se aborta la llamada para no dejarla colgada.
+    var porTiempo = new Promise(function (_, rej) {
+      reloj = setTimeout(function () {
+        if (ctrl) { try { ctrl.abort(); } catch (err) {} }
+        var t = new Error('Tiempo de espera agotado');
+        t.timeout = true;
+        rej(t);
+      }, limite);
+    });
+    return Promise.race([
+      Promise.resolve().then(function () { return accion(ctrl ? ctrl.signal : undefined); }),
+      porTiempo
+    ])
+      .then(function (r) { clearTimeout(reloj); return r; })
+      .catch(function (e) {
+        clearTimeout(reloj);
+        if (esFalloDeRed(e)) {
+          var fallo = new Error(Sync.mensajeDeError(e));
+          fallo.red = true;
+          fallo.timeout = !!(e && (e.name === 'AbortError' || e.timeout));
+          throw fallo;
+        }
+        throw e;   // errores del servicio (credenciales, repositorio, etc.) se informan tal cual
+      });
+  }
+
+  /** Reintenta una operación ante fallos de conexión, sin repetir errores del servicio */
+  function reintentar(accion, esperas) {
+    esperas = esperas || Sync.esperasReintento;
+    var intentos = 0;
+    function paso() {
+      intentos += 1;
+      return conRed(accion).catch(function (e) {
+        if (!esFalloDeRed(e) || intentos >= esperas.length) throw e;
+        Sync.fijarEstado('sincronizando', 'Sin respuesta del servicio. Reintentando (' + intentos + '/' + (esperas.length - 1) + ')…');
+        return new Promise(function (res) { setTimeout(res, esperas[intentos]); }).then(paso);
+      });
+    }
+    return paso();
+  }
+
+  /** Tras un fallo de conexión, se reintenta solo en unos segundos */
+  var relojReintento = null;
+  function programarReintento(ms) {
+    if (relojReintento || !Sync.configurado()) return;
+    relojReintento = setTimeout(function () {
+      relojReintento = null;
+      if (hayRed()) Sync.sincronizar({ silencioso: true });
+    }, ms || 20000);
+  }
+
   /* ---------- Sincronización ---------- */
   Sync.sincronizar = function (opciones) {
     opciones = opciones || {};
@@ -240,8 +335,9 @@
     }
     if (!hayRed()) {
       Sync.fijarEstado('sin-conexion', 'Operando sin conexión. Los cambios se guardarán y enviarán al recuperar Internet.');
-      if (opciones.manual) U.toast('Sin conexión a Internet', 'warn');
-      return Promise.resolve({ ok: false, mensaje: 'Sin conexión' });
+      if (opciones.manual) U.toast('Sin conexión a Internet. Los cambios quedaron guardados y se enviarán solos.', 'warn');
+      programarReintento(15000);
+      return Promise.resolve({ ok: false, mensaje: Sync.mensajeDeError(null) });
     }
 
     var prov = Sync.proveedor();
@@ -251,7 +347,7 @@
     var resultado = { ok: false, subidos: 0, bajados: 0, conflictos: 0, mensaje: '' };
 
     return Promise.resolve()
-      .then(function () { return prov.descargar(); })
+      .then(function () { return reintentar(function (s) { return prov.descargar(s); }); })
       .then(function (remoto) {
         if (remoto && remoto.colecciones) {
           return Sync.mezclar(remoto.colecciones).then(function (r) {
@@ -267,7 +363,7 @@
         // Sin cambios propios ni recibidos no hay nada que publicar
         if (!porSubir && !resultado.bajados) return { sinCambios: true };
         var paquete = Sync.armarPaquete({ soloCambios: prov.snapshot === false });
-        return prov.subir(paquete).then(function (r) { return r || {}; });
+        return reintentar(function (s) { return prov.subir(paquete, s); }).then(function (r) { return r || {}; });
       })
       .then(function () {
         return CSN.store.marcarSincronizados();
@@ -287,12 +383,16 @@
         return resultado;
       })
       .catch(function (e) {
-        var msg = (e && e.message) || 'Error desconocido';
+        var msg = Sync.mensajeDeError(e);
+        var esRed = esFalloDeRed(e);
         resultado.ok = false;
         resultado.mensaje = msg;
-        Sync.fijarEstado(hayRed() ? 'error' : 'sin-conexion', msg);
+        resultado.red = esRed;
+        Sync.fijarEstado(esRed && !hayRed() ? 'sin-conexion' : 'error', msg);
         CSN.store.guardarConfigLocal({ ultimaSync: U.marca(), ultimaSyncEstado: 'error: ' + msg });
-        if (opciones.manual) U.toast('No fue posible sincronizar: ' + msg, 'err');
+        if (opciones.manual) U.toast(msg, esRed ? 'warn' : 'err');
+        // Ante un problema de conexión se reintenta solo, sin intervención del usuario
+        if (esRed) programarReintento(hayRed() ? 20000 : 15000);
         Sync.ultimoResultado = resultado;
         return resultado;
       })
@@ -336,6 +436,7 @@
   Sync.detener = function () {
     if (temporizador) { clearInterval(temporizador); temporizador = null; }
     clearTimeout(temporizadorPush);
+    if (relojReintento) { clearTimeout(relojReintento); relojReintento = null; }
   };
 
   /* ---------- Vinculación de dispositivos con un solo código ---------- */
@@ -420,7 +521,7 @@
     if (!hayRed()) return Promise.reject(new Error('El dispositivo no tiene conexión a Internet.'));
     var prov = Sync.proveedor();
     Sync.fijarEstado('sincronizando', 'Verificando conexión…');
-    return prov.probar().then(function (info) {
+    return conRed(function (s) { return prov.probar(s); }, 20000).then(function (info) {
       Sync.fijarEstado(Sync.configurado() ? 'sincronizado' : 'solo-local', 'Conexión verificada');
       return info;
     }).catch(function (e) {

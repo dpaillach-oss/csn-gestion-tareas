@@ -77,10 +77,11 @@
     return Object.assign(h, extra || {});
   }
 
-  function pedir(metodo, url, cuerpo, extra) {
+  function pedir(metodo, url, cuerpo, extra, signal) {
     return autenticar().then(function () {
       var opts = { method: metodo, headers: cabeceras(extra), cache: 'no-store' };
       if (cuerpo) opts.body = JSON.stringify(cuerpo);
+      if (signal) opts.signal = signal;
       return fetch(url, opts);
     }).then(function (r) {
       if (r.status === 401 || r.status === 403) {
@@ -109,8 +110,8 @@
     snapshot: false,
 
     /** Comprueba la conexión y la existencia de la tabla */
-    probar: function () {
-      return pedir('GET', base() + '/rest/v1/' + tabla() + '?select=id&limit=1').then(function (r) {
+    probar: function (signal) {
+      return pedir('GET', base() + '/rest/v1/' + tabla() + '?select=id&limit=1', null, null, signal).then(function (r) {
         return { tabla: tabla(), accesible: true, registros: (r || []).length };
       });
     },
@@ -119,12 +120,12 @@
      * Descarga los cambios remotos comparando marcas de tiempo.
      * Devuelve un paquete {colecciones:{...}} o null si no hay cambios.
      */
-    descargar: function () {
+    descargar: function (signal) {
       var PAGINA = 1000;
       var indice = [];
       function traer(desde) {
         return pedir('GET', base() + '/rest/v1/' + tabla() + '?select=id,coleccion,ts&order=id.asc',
-          null, { 'Range': desde + '-' + (desde + PAGINA - 1) }).then(function (filas) {
+          null, { 'Range': desde + '-' + (desde + PAGINA - 1) }, signal).then(function (filas) {
             filas = filas || [];
             indice = indice.concat(filas);
             if (filas.length === PAGINA) return traer(desde + PAGINA);
@@ -150,7 +151,7 @@
           var parte = ids.slice(i, i + LOTE);
           if (!parte.length) return Promise.resolve(completa);
           var filtro = '(' + parte.map(encodeURIComponent).join(',') + ')';
-          return pedir('GET', base() + '/rest/v1/' + tabla() + '?select=id,coleccion,datos&id=in.' + filtro)
+          return pedir('GET', base() + '/rest/v1/' + tabla() + '?select=id,coleccion,datos&id=in.' + filtro, null, null, signal)
             .then(function (filas) {
               completa = completa.concat(filas || []);
               return traerLote(i + LOTE);
@@ -169,7 +170,7 @@
     },
 
     /** Sube (inserta o actualiza) los registros modificados */
-    subir: function (paquete) {
+    subir: function (paquete, signal) {
       var filas = [];
       Object.keys(paquete.colecciones || {}).forEach(function (col) {
         paquete.colecciones[col].forEach(function (r) {
@@ -184,7 +185,7 @@
         var parte = filas.slice(i, i + LOTE);
         if (!parte.length) return Promise.resolve(enviados);
         return pedir('POST', base() + '/rest/v1/' + tabla(), parte,
-          { 'Prefer': 'resolution=merge-duplicates,return=minimal' })
+          { 'Prefer': 'resolution=merge-duplicates,return=minimal' }, signal)
           .then(function () { enviados += parte.length; return enviar(i + LOTE); });
       }
       return enviar(0).then(function (n) { return { ok: true, subidos: n }; });
